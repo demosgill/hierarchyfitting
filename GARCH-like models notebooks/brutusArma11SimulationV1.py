@@ -129,7 +129,7 @@ def ARMA(pars, data, simulate=False):
     # pormenores
     T = len(data)
     y = np.repeat(np.mean(data), T)
-    data = data  - np.mean(data)
+    data = data - np.mean(data)
 
     # function
     for t in range(T):
