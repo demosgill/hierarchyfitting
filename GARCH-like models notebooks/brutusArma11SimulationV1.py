@@ -1,13 +1,12 @@
 __author__ = 'demos'
 
-import htools as htools
 import pandas as pd
 import numpy as np
 import scipy as sp
 import numpy as np
 import numdifftools as ndt
 from scipy.optimize import minimize
-import pandas.io.data as web
+from pandas_datareader import data, wb
 from datetime import datetime
 from statsmodels.tsa.arima_model import ARIMA
 
@@ -41,7 +40,10 @@ import sys
 import numdifftools as ndt
 
 import pandas as pd
-import htools as htools
+try:
+    import htools as htools
+except:
+    pass
 from scipy.optimize import minimize
 
 import itertools
@@ -52,7 +54,7 @@ import os
 # ---------------------------------------------------------------
 
 # DEFINE ALGO
-method = 'SLSQP'
+method = 'Nelder-Mead'
 
 # ---------------------------------------------------------------
 # ---------------------------------------------------------------
@@ -131,7 +133,7 @@ def ARMA(pars, data, simulate=False):
 
     # function
     for t in range(T):
-        y[t] = c + (y[t] - theta * y[t - 1]) + phi * data[t - 1]
+        y[t] = c + (y[t] - theta * y[t - 1]) + phi * data[t - 1] # CORRECT
 
     # objective
     sse = np.sum((data - y) ** 2.)
@@ -160,7 +162,7 @@ def optimizeARMA(data):
 # ---------------------------------------------------------------
 def simulateArma(pars, sz):
     # Generate synthetic data
-    epsilon = np.random.normal(0.0, 1., sz)
+    epsilon = np.random.normal(0.0, .01, sz)
     syntheticData = ARMA(pars, epsilon, simulate=True)
     return syntheticData, epsilon
 
@@ -234,7 +236,7 @@ def ARMA1Profile(pars, data, parFixed, par1=True, par2=False, par3=False, simula
 
     # function
     for t in range(T):
-        y[t] = mu + (y[t] - theta * y[t - 1]) + phi * data[t - 1]
+        y[t] = mu + (y[t] - theta * y[t - 1]) + phi * data[t - 1] # ORIGINAL VERSION
 
     # objective
     sse = np.sum((data - y) ** 2.)
@@ -446,6 +448,7 @@ def ARMA1ProfileMPL(pars, data, parFixed, X_hat, par1=True, par2=False, par3=Fal
         return y
 
 
+# ---------------------------------------------------------------
 def estimateMPLARMA(data, parFixed, X_hat, par1=True, par2=False, par3=False, costOnly=True):
 
     # choose par
@@ -479,6 +482,7 @@ def estimateMPLARMA(data, parFixed, X_hat, par1=True, par2=False, par3=False, co
         return estimatedPars # return parameters
 
 
+# ---------------------------------------------------------------
 def estimateMlpAllPars(data):
 
     vecP = np.linspace(-0.9, 0.9, 50) #NAO ADIANTA MUDAR AQUI: TEM DE SER NA F(estimateModProfArmaGivenPar)
@@ -502,6 +506,7 @@ def estimate_AllParsViaLp(data):
     return lpHat1, lpHat2, lpHat3
 
 
+# ---------------------------------------------------------------
 def estimate_SingleParsViaMpl(data, par1=True, par2=False, par3=False):
 
     vec = np.linspace(-0.9, 0.9, 50)
@@ -516,6 +521,7 @@ def estimate_SingleParsViaMpl(data, par1=True, par2=False, par3=False):
     return bestPar
 
 
+# ---------------------------------------------------------------
 def retrieve_allParsMpl(data, bestPar, par1=True, par2=False, par3=False, costOnly=False):
 
     # Getting the profile of a single parameter and getting the best-parameter
@@ -537,6 +543,7 @@ def retrieve_allParsMpl(data, bestPar, par1=True, par2=False, par3=False, costOn
     return bestPars
 
 
+# ---------------------------------------------------------------
 def estimate_full_parameterSet_mpl(data, par1=True, par2=False, par3=False):
     # First get the best parameter
     bParHat = estimate_SingleParsViaMpl(data, par1=par1, par2=par2, par3=par3)
@@ -547,6 +554,7 @@ def estimate_full_parameterSet_mpl(data, par1=True, par2=False, par3=False):
     return allParsHat
 
 
+# ---------------------------------------------------------------
 def estimate_allParametersSet_Using_Mpl(data):
     mp1 = estimate_full_parameterSet_mpl(data, par1=True, par2=False, par3=False)
     mp2 = estimate_full_parameterSet_mpl(data, par1=False, par2=True, par3=False)
@@ -555,6 +563,7 @@ def estimate_allParametersSet_Using_Mpl(data):
 
 # # # # # Adapt Monte Carlo Functions # # # # #
 
+# ---------------------------------------------------------------
 def MC_given_sample_lp_and_Lm(pars, sz, MC):
 
     L1, L2, L3 = [], [], []
