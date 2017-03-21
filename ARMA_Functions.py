@@ -1,12 +1,15 @@
+
 import pandas as pd
 from scipy.optimize import minimize
 from scipy import signal, optimize
-import numpy as np
-import scipy as sp
-import matplotlib.pyplot as plt
 
 import statsmodels.api as sm
 import itertools
+
+from numpy import dot
+import warnings
+warnings.filterwarnings('ignore')
+import numdifftools as ndt
 
 #-------------------------------------------------
 """
@@ -15,132 +18,390 @@ Functions to work with ARMA models @ MARCH 2017
 #-------------------------------------------------
 
 ###################################################################
+
+algorithm = 'SLSQP'
+
+
+# ----------------------------------------
+def generateMA(par, sz):
+    beta = par
+    eps = np.random.standard_normal(sz)
+    y = np.repeat(np.mean(eps), sz)
+    error = y.copy()
+
+    for t in xrange(2, sz):
+        error[t] = eps[t] - beta * error[t - 1]
+
+    return error, eps
+
+
+def estimateMA(par, data):
+    beta = par
+    T = len(data)
+    error = np.repeat(np.mean(data), T)
+    sigma2 = np.var(data)
+
+    for t in xrange(2, sz):
+        error[t] = data[t] - beta * error[t - 1]
+
+    sse = np.sum(error ** 2.) / (2 * sigma2)
+    llk = 0.5 * np.log(2. * np.pi) + 0.5 * log(sigma2) + sse
+
+    return llk
+
+
+# ----------------------------------------
 def generateArma(pars, sz):
 
     gamma = pars[0]
     theta = pars[1]
 
-    epsilon = np.random.standard_normal(sz*2)
-    y = np.repeat(np.mean(epsilon), sz*2)
+    epsilon = np.random.standard_normal(sz)
+    y = np.repeat(np.mean(epsilon), sz)
 
-    for t in xrange(2, sz*2):
-        y[t] = gamma * y[t - 1] + epsilon[t] + theta * epsilon[t - 1]
+    for t in xrange(2, sz):
+        y[t] = gamma * y[t - 1] + (epsilon[t] + theta * epsilon[t - 1])
 
-    return y[sz:2*sz], epsilon[sz:2*sz]
-
-
-###################################################################
-def fitArma(pars, data):
-    gamma = pars[0]
-    theta = pars[1]
-
-    y         = np.repeat(np.mean(data), len(data))
-    errorsest = geterrors(data, pars)
-    sigma2    = np.maximum(pars[-1] ** 2, 1e-6)
-    #sigma2 = np.sum(errorsest**2.)/len(y)-2.
-    nobs      = len(errorsest)
-
-    for t in xrange(2, len(data)):
-        y[t] = gamma * y[t - 1] + data[t] + theta * data[t - 1]
-
-    llike = 0.5 * (nobs * np.log(sigma2)
-                   + np.sum((errorsest ** 2)) / sigma2
-                   + nobs * np.log(2 * np.pi))
-    return llike
+    return y, epsilon
 
 
-###################################################################
-def estimateARMA11V2(pars, data):
-    llk, bestP0 = DoGridSearch(data, numpts0=20, printe=True)
-    optim_kwds = dict(ftol=1e-50, full_output=True)
+def estimateARMA(pars, data):
+    beta, theta = pars[0], pars[1]
+    T = len(data)
+    error = np.repeat(np.mean(data), T)
+    sigma2 = np.var(data)
+
+    for t in xrange(2, T):
+        error[t] = data[t] - beta * data[t - 1] - theta * error[t - 1]
+
+    sse = np.sum(error ** 2.) / (2 * sigma2)
+    llk = 0.5 * np.log(2. * np.pi) + 0.5 * log(sigma2) + sse
+
+    return llk
+
+
+def estimatorARMA(data):
+    # Estimate
+    bounds = ((0.01, 0.99), (0.01, 0.99))
+    x0 = [0.1, 0.1]
     args = (data)
+    res = minimize(estimateARMA, x0, args=args, method=algorithm)
 
-    rh, cov_x, infodict, mesg, ier = optimize.leastsq(geterrors, bestP0, args=args, **optim_kwds)
-
-    return rh, cov_x, infodict, mesg, ier
+    return res.x
 
 
-###################################################################
-def estimateARMA11NoMeanMyWayVsTheHighwaY(pars, data):
-    """Return estimation bias for each parameter.
-       My implementation is the left; the package is on the right
+# ----------------------------------------
+def profileARMA_beta(pars, data, betaFix, simul=False):
+    beta, theta = betaFix, pars[0]
+    T = len(data)
+    error = np.repeat(np.mean(data), T)
+    sigma2 = np.var(data)
+
+    for t in xrange(2, T):
+        error[t] = data[t] - beta * data[t - 1] - theta * error[t - 1]
+
+    sse = np.sum(error ** 2.) / (2 * sigma2)
+    llk = 0.5 * np.log(2. * np.pi) + 0.5 * log(sigma2) + sse
+
+    if simul == False:
+        return llk
+    else:
+        return error
+
+
+
+def profileARMA_theta(pars, data, thetaFix, simul=False):
+    beta, theta = pars[0], thetaFix
+    T = len(data)
+    error = np.repeat(np.mean(data), T)
+    sigma2 = np.var(data)
+
+    for t in xrange(2, T):
+        error[t] = data[t] - beta * data[t - 1] - theta * error[t - 1]
+
+    sse = np.sum(error ** 2.) / (2 * sigma2)
+    llk = 0.5 * np.log(2. * np.pi) + 0.5 * log(sigma2) + sse
+
+    if simul == False:
+        return llk
+    else:
+        return error
+
+
+####################
+### MAIN FUNC I) ###
+####################
+
+def profileARMA_estimator(data, beta=True):
+    """ if beta == True --> profile beta
+        else: profile theta
+        return LLK
     """
 
-    llk, bestP0 = DoGridSearch(data, numpts0=5, printe=False)
-    # update
-    optim_kwds = dict(ftol=1e-10, full_output=True)
-    args = (data)
+    # Pre-alocate
+    bounds = ((0.01, 0.99))
+    x0 = [0.1]
+    FUN, PARS = [], []
+    parRange = np.linspace(0.1, 0.9, 40)  # parameter grid
 
-    # rh, cov_x, infodict, mesg, ier = optimize.leastsq(geterrors, bestP0, args=args, **optim_kwds)
-    res = minimize(fitArma, bestP0, args=args, method='BFGS')
-    MyPars = np.abs(res.x) - np.abs(pars)
-    print(' -> estimated pars my way = %s' % res.x)
+    # loop: gonna profile beta or theta ?
+    if beta == True:
+        fun = profileARMA_beta
+    else:
+        fun = profileARMA_theta
 
-    res2 = sm.tsa.ARMA(data, (1, 1)).fit(trend='nc')
-    Theirs = np.abs(res2.params) - np.abs(pars)
-    print(' -> estimated pars package = %s' % res2.params)
+    for par in range(len(parRange)):
+        args = (data, parRange[par])
+        res = minimize(fun, x0, args=args, method=algorithm)
+        FUN.append(res.fun)
+        PARS.append(res.x)
 
-    print(' -> Bias My way    = %.3f;\n -> The proper way = %.3f' % (np.sum(np.abs(MyPars)), np.sum(np.abs(Theirs))))
+    llk = pd.DataFrame(np.array(FUN), index=parRange)
+    parsH = pd.DataFrame(PARS, index=parRange)
 
+    # Max likelihood
+    llkOptimal = llk[llk == llk.min()].dropna().index[0]
 
-###################################################################
-def geterrors(data, params):
-    # copied from sandbox.tsa.arima.ARIMA
-    p, q = 1, 1
-    ar = np.concatenate(([1], -params[:p]))
-    ma = np.concatenate(([1], params[p:p + q]))
+    # Optimal parameters
+    optimalPars = parsH[parsH.index == llkOptimal]
+    optimalPars = np.array([optimalPars.index[0], optimalPars[0].values[0]])
 
-    # lfilter_zi requires same length for ar and ma
-    maxlag = 1 + max(p, q)
-    armax = np.zeros(maxlag)
-    armax[:p + 1] = ar
-    mamax = np.zeros(maxlag)
-    mamax[:q + 1] = ma
-
-    errorsest = signal.lfilter(ar, ma, data)
-
-    return errorsest
+    return llk, parsH, llkOptimal, optimalPars
 
 
-###################################################################
-def loglike(data, params):
+# ----------------------------------------
+# PLOT
+# ----------------------------------------
+def plotProfileLik(a, b, c, d):
+    f, ax = plt.subplots(1, 1, figsize=(5, 3))
+    ax.plot(b, marker='s', alpha=0.5)
+    ax.legend([r'$\hat{\eta}$'], fontsize=12, loc='lower left')
+    ax.set_ylabel(r'Nuisance parameter value')
+    ax.set_xlabel(r'Focal parameter value')
+    ax.axhline(d[1], color='b')
+    ax2 = plt.twinx()
+    (-a).plot(ax=ax2, marker='s', color='r', alpha=0.5)
+    ax2.set_ylabel(r'Log-Likelihood')
+    ax2.legend([r'$llk$'], fontsize=12, loc='best')
+    ax2.axvline(c, color='r')
+    plt.tight_layout()
+
+
+def plot_McResults(mVec, stdVec):
+    f, ax = plt.subplots(1, 1, figsize=(6, 4))
+
+    c = ['k', 'r', 'b']
+    mrk = ['s', 'v', 'o']
+    for i in range(len(mVec.columns)):
+        mVec[mVec.columns[i]].plot(color=c[i], marker=mrk[i])
+        (mVec[mVec.columns[i]] - stdVec[stdVec.columns[i]]).plot(color=c[i], linestyle=':')
+        (mVec[mVec.columns[i]] + stdVec[stdVec.columns[i]]).plot(color=c[i], linestyle=':')
+    plt.ylabel(r'$\sqrt{\chi^2}$', fontsize=22)
+    plt.xlabel(r'$Sample$ $size$', fontsize=22)
+    ax.legend(['Qml', 'LpBeta', 'LpTheta'], fontsize=12, loc='best',
+              fancybox=True, framealpha=0.5)
+    plt.tight_layout()
+
+
+# ----------------------------------------
+# BIAS
+# ----------------------------------------
+def estimator_estimateBias(data, truePars, allPars=True):
+    """ Aggregated parameter estimation bias -> allPars == True """
+
+    pHarQml = estimatorARMA(data)
+    _, _, _, pHatBeta = profileARMA_estimator(data, beta=True)
+    _, _, _, pHatTheta = profileARMA_estimator(data, beta=False)
+
+    if allPars == True:
+        biasVec = computeBias(pHarQml, pHatBeta, pHatTheta, truePars, allPars=True)
+        return biasVec
+    else:
+        bvecQml, bvecLpBeta, bvecLpTheta = computeBias(pHarQml, pHatBeta, pHatTheta, truePars, allPars=False)
+        return bvecQml, bvecLpBeta, bvecLpTheta
+
+
+# ----------------------------------------
+def computeBias(pHarQml, pHatBeta, pHatTheta, truePars, allPars=True):
+    """ If allPars==True, then we compute the overall bias
+        otherwise, we are interested on individual parameter bias (xi - xi^*)
     """
-    Loglikelihood for arma model
-    """
+    qmlB = np.abs(np.abs(pHarQml) - np.abs(truePars))
+    lpBB = np.abs(np.abs(pHatBeta) - np.abs(truePars))
+    lpTB = np.abs(np.abs(pHatTheta) - np.abs(truePars[::-1]))  # USE [::-1] just like SOE!
 
-    errorsest = geterrors(data, params)
-    sigma2 = np.maximum(params[-1] ** 2, 1e-6)
-    #sigma2 = np.sum(errorsest ** 2.) / len(errorsest) - 2.
-    axis = 0
-    nobs = len(errorsest)
+    if allPars == True:
+        sum1 = np.sum(qmlB)
+        DF = pd.DataFrame(np.array([sum1]), columns=['qmlBias'])
+        DF['LpBetaBias'] = np.sum(lpBB)
+        DF['LpThetaBias'] = np.sum(lpTB)
 
-    llike = -0.5 * (nobs * np.log(sigma2)
-                    + np.sum(errorsest ** 2) / sigma2
-                    + nobs * np.log(2 * np.pi))
-    return llike
+        return DF
+    else:
+        return qmlB, lpBB, lpTB
 
 
-###################################################################
-def DoGridSearch(sdata, numpts0=5, printe=False):
-    GRID_TH = np.linspace(0.1, 0.9, numpts0 + 2)
-    GRID_TH = GRID_TH[1:-1]
+# ----------------------------------------
+# Monte-Carlo
+# ----------------------------------------
+def MonteCarloBias(truePars, sz, MC=30):
+    """ Use for single iteration """
 
-    GRID_OM = np.linspace(0.1, 0.9, numpts0 + 2)
-    GRID_OM = GRID_OM[1:-1]
+    RES = pd.DataFrame()
+    # Simulate and estimate
+    for mc in range(MC):
+        sdata, _ = armf.generateArma(truePars, sz)
+        biasVec = estimator_estimateBias(sdata, truePars, allPars=True)
+        RES = pd.concat([RES, biasVec], axis=0)
 
-    PTS = [GRID_OM, GRID_TH]
+    return RES
 
-    pars0Vec = np.array([list(x) for x in itertools.product(*PTS)])
 
-    R = []
-    for p0 in pars0Vec:
-        R.append(loglike(sdata, p0))
+def MonteCarloBias_fullIteration(pars, MC=30):
+    # For 100, 150, 200, 250 ... 1000, compute 30 Monte-Carlo simulations per sample
+    MeanVec = pd.DataFrame();
+    StdVec = MeanVec.copy()
+    sampleGrid = np.linspace(100, 1000, 20).astype(int)  # sample sizes to obtain estimates
 
-    # entry of R where the log-likelihood is the maximum
-    maxL = np.where(R == max(R))[0][0].astype(int)
+    for sz in sampleGrid:
+        print(sz)
+        RES = MonteCarloBias(pars, sz, MC=MC)
+        MeanVec = pd.concat([MeanVec, pd.DataFrame(RES.mean()).T], axis=0)
+        StdVec = pd.concat([StdVec, pd.DataFrame(RES.std()).T], axis=0)
 
-    if printe is not False:
-        print('optimal starting values are %s' % pars0Vec[maxL])
+    # Add index
+    MeanVec.index = sampleGrid;
+    StdVec.index = sampleGrid
 
-    return R, pars0Vec[maxL]
+    return MeanVec, StdVec
+
+
+# -------------------------------------------------------------
+# Modified Profile Likelihood and Hessian estimation Functions
+# -------------------------------------------------------------
+
+# --------------------------------------------------------------
+def getHandScores(pars, data, parFix, beta=True):
+    H = calculate_hessianMatrix(pars, data, parFix, beta=beta)
+    scores = calc_scoresLprofile(pars, data, parFix, beta=beta)
+    return H, scores
+
+
+# ----------------------------------------
+def calculate_hessianMatrix(pars, data, parFix, beta=True):
+    if beta == True:
+        f = lambda x: profileARMA_beta(x, data, parFix)
+    else:
+        f = lambda x: profileARMA_theta(x, data, parFix)
+    # Get Hessian
+    Hfun = ndt.Hessian(f, full_output=False, method='central')
+    if beta == True:
+        H = Hfun(pars[-1])
+    else:
+        H = Hfun(pars[0])
+    FIM = mat(inv(H))
+
+    return FIM
+
+
+# ----------------------------------------
+def getFisherInfoMatrixFullARMAModel(data, pars):
+    f = lambda x: estimateARMA(x, sdata)
+    Hfun = ndt.Hessian(f, full_output=False, method='central')
+    H = Hfun(pars)
+    FIM = mat(inv(-H))
+    return FIM
+
+
+# ----------------------------------------
+def calc_scoresLprofile(pars, data, parFix, beta=True):
+    ## Sensitivity analysis
+    step = 1e-5 * np.array(pars)
+    T = np.size(data, 0)
+    scores = np.zeros((T, len(pars)))
+
+    for i in xrange(len(pars)):
+        h = step[i]
+        delta = np.zeros(len(pars))
+        delta[i] = h
+        if beta == True:
+            logliksplus = profileARMA_beta(pars[0] + delta,
+                                           data, parFix, simul=True)
+            loglikminus = profileARMA_beta(pars[0] - delta,
+                                           data, parFix, simul=True)
+            scores[:, i] = (logliksplus - loglikminus) / (2 * h)
+        else:
+            logliksplus = profileARMA_theta(pars[1] + delta,
+                                            data, parFix, simul=True)
+            loglikminus = profileARMA_theta(pars[1] - delta,
+                                            data, parFix, simul=True)
+            scores[:, i] = (logliksplus - loglikminus) / (2 * h)
+
+    covMatrix = np.dot(scores.T, scores)
+    covMatrix = covMatrix[0][0] ** -1.
+
+    return covMatrix
+
+
+# ----------------------------------------
+def estimate_mpl_beta(data):
+    # first, Lp
+    _, _, _, parsHatLp = profileARMA_estimator(data, beta=True)
+
+    # Compute Scores and FIM
+    FIM, scores = getHandScores(parsHatLp, sdata, parsHatLp[-1], beta=True)
+
+    # Pre-alocate
+    bounds = ((0.01, 0.99))
+    x0 = [0.1]
+    FUN, PARS = [], []
+    parRange = np.linspace(0.1, 0.9, 40)  # parameter grid
+
+    # loop: gonna profile beta or theta ?
+    fun = profileARMA_mod_beta
+
+    for par in range(len(parRange)):
+        args = (data, parRange[par], scores, False)
+        res = minimize(fun, x0, args=args, method=algorithm)
+        FUN.append(res.fun)
+        PARS.append(res.x)
+
+    llk = pd.DataFrame(np.array(FUN), index=parRange)
+    parsH = pd.DataFrame(PARS, index=parRange)
+
+    # Max likelihood
+    llkOptimal = llk[llk == llk.min()].dropna().index[0]
+
+    # Optimal parameters
+    optimalPars = parsH[parsH.index == llkOptimal]
+    optimalPars = np.array([optimalPars.index[0], optimalPars[0].values[0]])
+
+    return llk, parsH, llkOptimal, optimalPars
+
+
+# ----------------------------------------
+def profileARMA_mod_beta(pars, data, betaFix, X_hat, simul=False):
+    beta, theta = betaFix, pars[0]
+    T = len(data)
+    error = np.repeat(np.mean(data), T)
+    sigma2 = np.var(data)
+
+    for t in xrange(2, T):
+        error[t] = data[t] - beta * data[t - 1] - theta * error[t - 1]
+
+    # Pre-calculations
+    pars_step = np.array([betaFix, pars[-1]])
+    Fish_step, X_step = getHandScores(pars_step, data, betaFix, beta=True)
+    detI = np.array([np.abs(np.linalg.det(Fish_step))])
+    detS = np.array([np.abs(np.dot(X_hat.T, X_step))])
+
+    sse = np.sum(error ** 2.) / (2 * sigma2)
+    llk = 0.5 * np.log(2. * np.pi) + 0.5 * log(sigma2) + sse
+    llm = llk  # - detI - detS # ISSUE IS IN THIS COMPUTATION OS detI and detS
+
+    if simul == False:
+        return llm
+    else:
+        return error
+
 

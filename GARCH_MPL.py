@@ -1719,6 +1719,7 @@ def GARCH_contourGB(pars, data, sigma, gamma_fix, beta_fix, out=None):
     else:
         return loglik, logliks, copy(sigma)
 
+
 def estimateGB_contour(data, GARCH_contourGB, fix_gamma, fix_beta, update_freq=5, disp='off'):
 
     # initial points
