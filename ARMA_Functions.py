@@ -421,9 +421,7 @@ def profileARMA_MPLbeta(pars, data, betaFix, X_hat, simul=False):
 
     ## The cost
     #llkm = -(len(t) - p - 2.) / 2. * np.log(s_tc[ind]) + np.log(detI) / 2. - np.log(detS)
-    #llkm = (len(data)-1-2.)/2. * np.log(llk) - np.log(detI)/2. + np.log(detS)
-    llkm = np.log(llk) + np.log(detI)/2. + np.log(detS)
-
+    llkm = (len(data)-1-2.)/2. * np.log(llk) + np.log(detI)/2. + np.log(detS)
 
     if simul == False:
         return llkm
