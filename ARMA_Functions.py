@@ -214,33 +214,39 @@ def estimator_estimateBias(data, truePars, allPars=True):
     pHarQml = estimatorARMA(data)
     _, _, _, pHatBeta = profileARMA_estimator(data, beta=True)
     _, _, _, pHatTheta = profileARMA_estimator(data, beta=False)
+    _, _, _, pHatMlBeta = estimate_mpl_beta(data)
+    _, _, _, pHatMlTheta = estimate_mpl_theta(data)
 
     if allPars == True:
-        biasVec = computeBias(pHarQml, pHatBeta, pHatTheta, truePars, allPars=True)
+        biasVec = computeBias(pHarQml, pHatBeta, pHatTheta, truePars, pHatMlBeta, pHatMlTheta, allPars=True)
         return biasVec
     else:
-        bvecQml, bvecLpBeta, bvecLpTheta = computeBias(pHarQml, pHatBeta, pHatTheta, truePars, allPars=False)
-        return bvecQml, bvecLpBeta, bvecLpTheta
+        bvecQml, bvecLpBeta, bvecLpTheta, mplb, mplt = computeBias(pHarQml, pHatBeta, pHatTheta, truePars, pHatMlBeta, pHatMlTheta, allPars=False)
+        return bvecQml, bvecLpBeta, bvecLpTheta, mplb, mplt
 
 
 # ----------------------------------------
-def computeBias(pHarQml, pHatBeta, pHatTheta, truePars, allPars=True):
+def computeBias(pHatQml, pHatBeta, pHatTheta, truePars, mplbH, mpltH, allPars=True):
     """ If allPars==True, then we compute the overall bias
         otherwise, we are interested on individual parameter bias (xi - xi^*)
     """
-    qmlB = np.abs(np.abs(pHarQml) - np.abs(truePars))
+    qmlB = np.abs(np.abs(pHatQml) - np.abs(truePars))
     lpBB = np.abs(np.abs(pHatBeta) - np.abs(truePars))
     lpTB = np.abs(np.abs(pHatTheta) - np.abs(truePars[::-1]))  # USE [::-1] just like SOE!
+    mlBB = np.abs(np.abs(mplbH) - np.abs(truePars))
+    mlTB = np.abs(np.abs(mpltH) - np.abs(truePars[::-1]))  # USE [::-1] just like SOE!
 
     if allPars == True:
         sum1 = np.sum(qmlB)
         DF = pd.DataFrame(np.array([sum1]), columns=['qmlBias'])
-        DF['LpBetaBias'] = np.sum(lpBB)
+        DF['LpBetaBias']  = np.sum(lpBB)
         DF['LpThetaBias'] = np.sum(lpTB)
+        DF['LmBetaBias']  = np.sum(mlBB)
+        DF['LmThetaBias'] = np.sum(mlTB)
 
         return DF
     else:
-        return qmlB, lpBB, lpTB
+        return qmlB, lpBB, lpTB, mlBB, mlTB
 
 
 # ----------------------------------------
