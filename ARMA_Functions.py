@@ -357,6 +357,8 @@ def getHandScores(pars, data, parFix, beta=True):
 
 
 # ----------------------------------------
+#               ESTIMATING MPL           -
+# ----------------------------------------
 def estimate_mpl_beta(data):
     # first, Lp
     _, _, _, parsHatLp = profileARMA_estimator(data, beta=True)
@@ -389,13 +391,42 @@ def estimate_mpl_beta(data):
     optimalPars = parsH[parsH.index == llkOptimal]
     optimalPars = np.array([optimalPars.index[0], optimalPars[0].values[0]])
 
-    # Re-estimate the MPL at the optimal beta
-    args = (data, optimalPars[0], Xscores)
-    res2 = minimize(fun, x0, args=args, method=algorithm)
+    return llk, parsH, llkOptimal, optimalPars
 
-    # NB: I AM NOT SPITTING THE OPTIMAL PARAMETERS !!!!! CORRECT THIS
 
-    return llk, parsH, llkOptimal,  res2.x, optimalPars #np.array([res2.x[-1], optimalPars[-1]])
+def estimate_mpl_theta(data):
+    # first, Lp
+    _, _, _, parsHatLp = profileARMA_estimator(data, beta=False)
+
+    # Compute Scores and FIM
+    H, Xscores = getHandScores(parsHatLp, data, parsHatLp[-1], beta=False)
+
+    # estimate the Modified Profile Likelihood
+    bounds = ((0.01, 0.99))
+    x0 = [0.1]
+    FUN, PARS = [], []
+    parRange = np.linspace(0.1, 0.9, 40)  # parameter grid
+
+    # loop: gonna profile beta or theta ?
+    fun = profileARMA_MPLtheta
+
+    for par in range(len(parRange)):
+        args = (data, parRange[par], Xscores)
+        res = minimize(fun, x0, args=args, method=algorithm)
+        FUN.append(res.fun)
+        PARS.append(res.x)
+
+    llk = pd.DataFrame(np.array(FUN), index=parRange)
+    parsH = pd.DataFrame(PARS, index=parRange)
+
+    # Max likelihood
+    llkOptimal = llk[llk == llk.min()].dropna().index[0]
+
+    # Optimal parameters
+    optimalPars = parsH[parsH.index == llkOptimal]
+    optimalPars = np.array([optimalPars.index[0], optimalPars[0].values[0]])
+
+    return llk, parsH, llkOptimal, optimalPars
 
 
 # ----------------------------------------
@@ -416,12 +447,40 @@ def profileARMA_MPLbeta(pars, data, betaFix, X_hat, simul=False):
     ## MOD PROF
     X, H = getHandScores(pars, data, betaFix, beta=True)
     I_psi = X - H
-    detI = np.abs(I_psi)  # To avoid duplicated calculations: I_psi
+    detI = np.abs(I_psi)
     detS = np.abs(np.dot(X_hat.T, X))
 
     ## The cost
-    #llkm = -(len(t) - p - 2.) / 2. * np.log(s_tc[ind]) + np.log(detI) / 2. - np.log(detS)
     llkm = (len(data)-1-2.)/2. * np.log(llk) + np.log(detI)/2. + np.log(detS)
+
+    if simul == False:
+        return llkm
+    else:
+        return error
+
+
+def profileARMA_MPLtheta(pars, data, thetaFix, X_hat, simul=False):
+
+    beta, theta = pars[0], thetaFix
+
+    T = len(data)
+    error = np.repeat(np.mean(data), T)
+    sigma2 = np.var(data)
+
+    for t in xrange(2, T):
+        error[t] = data[t] - beta * data[t - 1] - theta * error[t - 1]
+
+    sse = np.sum(error ** 2.) / (2 * sigma2)
+    llk = 0.5 * np.log(2. * np.pi) + 0.5 * log(sigma2) + sse
+
+    ## MOD PROF
+    X, H = getHandScores(pars, data, thetaFix, beta=False)
+    I_psi = X - H
+    detI = np.abs(I_psi)
+    detS = np.abs(np.dot(X_hat.T, X))
+
+    ## The cost
+    llkm = (len(data) - 1 - 2.) / 2. * np.log(llk) + np.log(detI) / 2. + np.log(detS)
 
     if simul == False:
         return llkm
