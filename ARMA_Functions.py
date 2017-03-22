@@ -1,6 +1,9 @@
 
 import pandas as pd
 from scipy.optimize import minimize
+from numpy import log, invert
+from scipy import *
+import numpy as np
 from scipy import signal, optimize
 
 import statsmodels.api as sm
@@ -11,16 +14,15 @@ import warnings
 warnings.filterwarnings('ignore')
 import numdifftools as ndt
 
-#-------------------------------------------------
-"""
-Functions to work with ARMA models @ MARCH 2017
-"""
-#-------------------------------------------------
+#########################################################
+                                                        #
+""" Functions to work with ARMA models @ MARCH 2017 """ #
+                                                        #
+#########################################################
 
-###################################################################
 
-algorithm = 'SLSQP'
 
+algorithm = 'BFGS'
 
 # ----------------------------------------
 def generateMA(par, sz):
@@ -280,15 +282,15 @@ def MonteCarloBias_fullIteration(pars, MC=30):
 # Modified Profile Likelihood and Hessian estimation Functions
 # -------------------------------------------------------------
 
-# --------------------------------------------------------------
-def getHandScores(pars, data, parFix, beta=True):
-    H = calculate_hessianMatrix(pars, data, parFix, beta=beta)
-    scores = calc_scoresLprofile(pars, data, parFix, beta=beta)
-    return H, scores
-
-
 # ----------------------------------------
 def calculate_hessianMatrix(pars, data, parFix, beta=True):
+    """
+    :param pars: pre-estimated parameters [1x2] (beta, theta)
+    :param data: ARMA(1,1)data
+    :param parFix: Fixed beta (if beta == True) or fixed theta otherwise
+    :param beta: Beta == True or == False (then focal parameter is theta
+    :return: Negative of Hessian Matrix' Inverse
+    """
     if beta == True:
         f = lambda x: profileARMA_beta(x, data, parFix)
     else:
@@ -299,22 +301,26 @@ def calculate_hessianMatrix(pars, data, parFix, beta=True):
         H = Hfun(pars[-1])
     else:
         H = Hfun(pars[0])
-    FIM = mat(inv(H))
 
-    return FIM
+    FIM = H**-1
+
+    return - FIM[0][0]
 
 
 # ----------------------------------------
 def getFisherInfoMatrixFullARMAModel(data, pars):
-    f = lambda x: estimateARMA(x, sdata)
+    f = lambda x: estimateARMA(x, data)
     Hfun = ndt.Hessian(f, full_output=False, method='central')
     H = Hfun(pars)
-    FIM = mat(inv(-H))
-    return FIM
+    FIM = H**-1
+    return - FIM
 
 
 # ----------------------------------------
 def calc_scoresLprofile(pars, data, parFix, beta=True):
+
+    # passar pars com shape ->>>> ([1,1])
+
     ## Sensitivity analysis
     step = 1e-5 * np.array(pars)
     T = np.size(data, 0)
@@ -325,22 +331,29 @@ def calc_scoresLprofile(pars, data, parFix, beta=True):
         delta = np.zeros(len(pars))
         delta[i] = h
         if beta == True:
-            logliksplus = profileARMA_beta(pars[0] + delta,
+            logliksplus = profileARMA_beta(pars[-1] + delta,
                                            data, parFix, simul=True)
-            loglikminus = profileARMA_beta(pars[0] - delta,
+            loglikminus = profileARMA_beta(pars[-1] - delta,
                                            data, parFix, simul=True)
             scores[:, i] = (logliksplus - loglikminus) / (2 * h)
         else:
-            logliksplus = profileARMA_theta(pars[1] + delta,
+            logliksplus = profileARMA_theta(pars[0] + delta,
                                             data, parFix, simul=True)
-            loglikminus = profileARMA_theta(pars[1] - delta,
+            loglikminus = profileARMA_theta(pars[0] - delta,
                                             data, parFix, simul=True)
             scores[:, i] = (logliksplus - loglikminus) / (2 * h)
 
-    covMatrix = np.dot(scores.T, scores)
-    covMatrix = covMatrix[0][0] ** -1.
+    covMatrix = np.dot(scores.T, scores)**-1.
+    covMatrix = covMatrix[0][0]
 
-    return covMatrix
+    return - covMatrix
+
+
+# --------------------------------------------------------------
+def getHandScores(pars, data, parFix, beta=True):
+    H = calculate_hessianMatrix(pars, data, parFix, beta=beta)
+    scores = calc_scoresLprofile(pars, data, parFix, beta=beta)
+    return H, scores
 
 
 # ----------------------------------------
@@ -349,19 +362,19 @@ def estimate_mpl_beta(data):
     _, _, _, parsHatLp = profileARMA_estimator(data, beta=True)
 
     # Compute Scores and FIM
-    FIM, scores = getHandScores(parsHatLp, sdata, parsHatLp[-1], beta=True)
+    H, Xscores = getHandScores(parsHatLp, data, parsHatLp[0], beta=True)
 
-    # Pre-alocate
+    # estimate the Modified Profile Likelihood
     bounds = ((0.01, 0.99))
     x0 = [0.1]
     FUN, PARS = [], []
     parRange = np.linspace(0.1, 0.9, 40)  # parameter grid
 
     # loop: gonna profile beta or theta ?
-    fun = profileARMA_mod_beta
+    fun = profileARMA_MPLbeta
 
     for par in range(len(parRange)):
-        args = (data, parRange[par], scores, False)
+        args = (data, parRange[par], Xscores)
         res = minimize(fun, x0, args=args, method=algorithm)
         FUN.append(res.fun)
         PARS.append(res.x)
@@ -376,32 +389,48 @@ def estimate_mpl_beta(data):
     optimalPars = parsH[parsH.index == llkOptimal]
     optimalPars = np.array([optimalPars.index[0], optimalPars[0].values[0]])
 
-    return llk, parsH, llkOptimal, optimalPars
+    # Re-estimate the MPL at the optimal beta
+    args = (data, optimalPars[0], Xscores)
+    res2 = minimize(fun, x0, args=args, method=algorithm)
+
+    # NB: I AM NOT SPITTING THE OPTIMAL PARAMETERS !!!!! CORRECT THIS
+
+    return llk, parsH, llkOptimal,  res2.x, optimalPars #np.array([res2.x[-1], optimalPars[-1]])
 
 
 # ----------------------------------------
-def profileARMA_mod_beta(pars, data, betaFix, X_hat, simul=False):
+def profileARMA_MPLbeta(pars, data, betaFix, X_hat, simul=False):
+
     beta, theta = betaFix, pars[0]
-    T = len(data)
-    error = np.repeat(np.mean(data), T)
-    sigma2 = np.var(data)
+
+    T           = len(data)
+    error       = np.repeat(np.mean(data), T)
+    sigma2      = np.var(data)
 
     for t in xrange(2, T):
         error[t] = data[t] - beta * data[t - 1] - theta * error[t - 1]
 
-    # Pre-calculations
-    pars_step = np.array([betaFix, pars[-1]])
-    Fish_step, X_step = getHandScores(pars_step, data, betaFix, beta=True)
-    detI = np.array([np.abs(np.linalg.det(Fish_step))])
-    detS = np.array([np.abs(np.dot(X_hat.T, X_step))])
-
     sse = np.sum(error ** 2.) / (2 * sigma2)
     llk = 0.5 * np.log(2. * np.pi) + 0.5 * log(sigma2) + sse
-    llm = llk  # - detI - detS # ISSUE IS IN THIS COMPUTATION OS detI and detS
+
+    ## MOD PROF
+    X, H = getHandScores(pars, data, betaFix, beta=True)
+    I_psi = X - H
+    detI = np.abs(I_psi)  # To avoid duplicated calculations: I_psi
+    detS = np.abs(np.dot(X_hat.T, X))
+
+    ## The cost
+    #llkm = -(len(t) - p - 2.) / 2. * np.log(s_tc[ind]) + np.log(detI) / 2. - np.log(detS)
+    #llkm = (len(data)-1-2.)/2. * np.log(llk) - np.log(detI)/2. + np.log(detS)
+    llkm = np.log(llk) + np.log(detI)/2. + np.log(detS)
+
 
     if simul == False:
-        return llm
+        return llkm
     else:
         return error
+
+
+# ----------------------------------------
 
 
