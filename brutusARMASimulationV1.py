@@ -1,4 +1,3 @@
-
 import pandas as pd
 from scipy.optimize import minimize
 from numpy import log, invert
@@ -7,13 +6,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal, optimize
 
-import statsmodels.api as sm
+#import statsmodels.api as sm
 import itertools
-
+import os
 from numpy import dot
 import warnings
 warnings.filterwarnings('ignore')
-import numdifftools as ndt
+#import numdifftools as ndt
 
 #########################################################
                                                         #
@@ -230,11 +229,11 @@ def computeBias(pHatQml, pHatBeta, pHatTheta, truePars, mplbH, mpltH, allPars=Tr
     """ If allPars==True, then we compute the overall bias
         otherwise, we are interested on individual parameter bias (xi - xi^*)
     """
-    qmlB = np.abs(np.abs(pHatQml) - np.abs(truePars))/np.abs(np.abs(truePars))
-    lpBB = np.abs(np.abs(pHatBeta) - np.abs(truePars))/np.abs(np.abs(truePars))
+    qmlB = np.abs(np.abs(pHatQml)   - np.abs(truePars))/np.abs(np.abs(truePars))
+    lpBB = np.abs(np.abs(pHatBeta)  - np.abs(truePars))/np.abs(np.abs(truePars))
     lpTB = np.abs(np.abs(pHatTheta) - np.abs(truePars[::-1])) /np.abs(np.abs(truePars[::-1])) # USE [::-1] just like SOE!
-    mlBB = np.abs(np.abs(mplbH) - np.abs(truePars))/np.abs(np.abs(truePars))
-    mlTB = np.abs(np.abs(mpltH) - np.abs(truePars[::-1]))/np.abs(np.abs(truePars[::-1]))  # USE [::-1] just like SOE!
+    mlBB = np.abs(np.abs(mplbH)     - np.abs(truePars))/np.abs(np.abs(truePars))
+    mlTB = np.abs(np.abs(mpltH)     - np.abs(truePars[::-1]))/np.abs(np.abs(truePars[::-1]))  # USE [::-1] just like SOE!
 
     if allPars == True:
         sum1 = np.sum(qmlB)
@@ -261,6 +260,8 @@ def MonteCarloBias(truePars, sz, MC=30):
         sdata, _ = generateArma(truePars, sz)
         biasVec = estimator_estimateBias(sdata, truePars, allPars=True)
         RES = pd.concat([RES, biasVec], axis=0)
+
+    RES.index = [sz]
 
     return RES
 
@@ -495,5 +496,33 @@ def profileARMA_MPLtheta(pars, data, thetaFix, X_hat, simul=False):
 
 
 # ----------------------------------------
+# ----------------------------------------
+
+def brutus_jobindex():
+    return int(os.environ['LSB_JOBINDEX'])
+
+def main():
+    path = '/cluster/home/gdemos/work/ARMA/' # Path @ Brutus
+    #path = '/Users/demos/hierarchyfitting/'
+
+    #try:
+    #    ID = brutus_jobindex() - 1
+    #    sampleSize = ID
+    #except:
+    #    print('Not @ Brutus env.')
+    sampleSize = 150
+    print(sampleSize)
+
+    # True pars
+    truePars = [0.15, 0.45]
+
+    # Run the Simulation
+    RES = MonteCarloBias(truePars, sampleSize, MC=2)
+
+    fileName = 'MC30_SampleSize_'+str(sampleSize)+'.h5'
+    # Save results
+    RES.to_hdf(path+fileName,'res')
 
 
+if __name__ == "__main__":
+    main()
