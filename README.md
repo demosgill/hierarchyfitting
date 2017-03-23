@@ -17,7 +17,7 @@ import pandas as pd
 
 
 # Generate synthetic time-series from an ARMA(1,1) process without constant.
-##### - Simulated data from the process: $y[t] = beta*y[t-1] + error[t] + theta*error[t-1], with error ~ N(0,1).$
+##### - Simulated data from the process: $y[t] = \beta*y_{t-1} + \varepsilon_{t} + \theta*\varepsilon_{t-1}, with \varepsilon ~ N(0,1).$
 
 
 pars = [0.2, 0.6] # parameters of the ARMA model
