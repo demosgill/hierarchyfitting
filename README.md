@@ -17,7 +17,7 @@ import pandas as pd
 
 
 # Generate synthetic time-series from an ARMA(1,1) process without constant.
-### - Simulated data from the process: $y[t] = beta*y[t-1] + error[t] + theta*error[t-1], with error ~ N(0,1).$
+##### - Simulated data from the process: $y[t] = beta*y[t-1] + error[t] + theta*error[t-1], with error ~ N(0,1).$
 
 
 pars = [0.2, 0.6] # parameters of the ARMA model
@@ -27,11 +27,11 @@ sz   = 300 # Sample size
 data = armf.generateArma(pars, sz)
 
 # Compare estimation bias of each one of the estimators:
-### - Quasi-max. Likelihood
-### - Profile Likelihood (beta)
-### - Profile Likelihood (theta)
-### - Modified Profile Likelihood (beta)
-### - Modified Profile Likelihood (theta)
+##### - Quasi-max. Likelihood
+##### - Profile Likelihood (beta)
+##### - Profile Likelihood (theta)
+##### - Modified Profile Likelihood (beta)
+##### - Modified Profile Likelihood (theta)
 
 
 res = armf.estimator_estimateBias(data, pars, allPars=True)
