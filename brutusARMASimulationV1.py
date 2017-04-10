@@ -1,3 +1,4 @@
+__author__ = 'demos'
 import pandas as pd
 from scipy.optimize import minimize
 from numpy import log, invert
@@ -12,7 +13,7 @@ import os
 from numpy import dot
 import warnings
 warnings.filterwarnings('ignore')
-#import numdifftools as ndt
+import numdifftools as ndt
 
 #########################################################
                                                         #
@@ -229,11 +230,25 @@ def computeBias(pHatQml, pHatBeta, pHatTheta, truePars, mplbH, mpltH, allPars=Tr
     """ If allPars==True, then we compute the overall bias
         otherwise, we are interested on individual parameter bias (xi - xi^*)
     """
+
+    # SWITCH THESE GUYS !!!!!!
+    pHatTheta   = pHatTheta[::-1]
+    mpltH       = mpltH[::-1]
+
     qmlB = np.abs(np.abs(pHatQml)   - np.abs(truePars))/np.abs(np.abs(truePars))
     lpBB = np.abs(np.abs(pHatBeta)  - np.abs(truePars))/np.abs(np.abs(truePars))
-    lpTB = np.abs(np.abs(pHatTheta) - np.abs(truePars[::-1])) /np.abs(np.abs(truePars[::-1])) # USE [::-1] just like SOE!
+    lpTB = np.abs(np.abs(pHatTheta) - np.abs(truePars)) /np.abs(np.abs(truePars)) # USE [::-1] just like SOE!
     mlBB = np.abs(np.abs(mplbH)     - np.abs(truePars))/np.abs(np.abs(truePars))
-    mlTB = np.abs(np.abs(mpltH)     - np.abs(truePars[::-1]))/np.abs(np.abs(truePars[::-1]))  # USE [::-1] just like SOE!
+    mlTB = np.abs(np.abs(mpltH)     - np.abs(truePars))/np.abs(np.abs(truePars))  # USE [::-1] just like SOE!
+
+    ### SUPER PROF AND MOD PROF
+    aggPl1 = np.abs((np.abs(lpBB[0]) - truePars[0])/truePars[0])
+    aggPl2 = np.abs((np.abs(lpTB[-1]) - truePars[-1])/truePars[-1])
+    aggPl = np.abs(aggPl1+ aggPl2)
+
+    aggMl1 = np.abs((np.abs(mplbH[0]) - truePars[0])/truePars[0])
+    aggMl2 = np.abs((np.abs(mpltH[-1]) - truePars[-1])/truePars[-1])
+    aggMl = np.abs(aggMl1+ aggMl2)
 
     if allPars == True:
         sum1 = np.sum(qmlB)
@@ -242,6 +257,8 @@ def computeBias(pHatQml, pHatBeta, pHatTheta, truePars, mplbH, mpltH, allPars=Tr
         DF['LpThetaBias'] = np.sum(lpTB)
         DF['LmBetaBias']  = np.sum(mlBB)
         DF['LmThetaBias'] = np.sum(mlTB)
+        DF['aggPl'] = aggPl
+        DF['aggMl'] = aggMl
 
         return DF
     else:
@@ -261,8 +278,6 @@ def MonteCarloBias(truePars, sz, MC=30):
         biasVec = estimator_estimateBias(sdata, truePars, allPars=True)
         RES = pd.concat([RES, biasVec], axis=0)
 
-    RES.index = [sz]
-
     return RES
 
 
@@ -270,16 +285,16 @@ def MonteCarloBias_fullIteration(pars, MC=30):
     # For 100, 150, 200, 250 ... 1000, compute 30 Monte-Carlo simulations per sample
     MeanVec = pd.DataFrame();
     StdVec = MeanVec.copy()
-    sampleGrid = np.linspace(100, 1000, 10).astype(int)  # sample sizes to obtain estimates
+    sampleGrid = np.arange(100, 500, 20).astype(int)  # sample sizes to obtain estimates
 
     for sz in sampleGrid:
-        print(sz)
+        print('Monte Carlo on sample %s / 500'%sz)
         RES = MonteCarloBias(pars, sz, MC=MC)
         MeanVec = pd.concat([MeanVec, pd.DataFrame(RES.mean()).T], axis=0)
         StdVec = pd.concat([StdVec, pd.DataFrame(RES.std()).T], axis=0)
 
     # Add index
-    MeanVec.index = sampleGrid;
+    MeanVec.index = sampleGrid
     StdVec.index = sampleGrid
 
     return MeanVec, StdVec
@@ -303,7 +318,7 @@ def calculate_hessianMatrix(pars, data, parFix, beta=True):
     else:
         f = lambda x: profileARMA_theta(x, data, parFix)
     # Get Hessian
-    Hfun = ndt.Hessian(f, full_output=False, method='central')
+    Hfun = ndt.Hessian(f,  method='central')
     if beta == True:
         H = Hfun(pars[-1])
     else:
@@ -317,7 +332,7 @@ def calculate_hessianMatrix(pars, data, parFix, beta=True):
 # ----------------------------------------
 def getFisherInfoMatrixFullARMAModel(data, pars):
     f = lambda x: estimateARMA(x, data)
-    Hfun = ndt.Hessian(f, full_output=False, method='central')
+    Hfun = ndt.Hessian(f, method='central')
     H = Hfun(pars)
     FIM = H**-1
     return - FIM
@@ -501,27 +516,34 @@ def profileARMA_MPLtheta(pars, data, thetaFix, X_hat, simul=False):
 def brutus_jobindex():
     return int(os.environ['LSB_JOBINDEX'])
 
+
 def main():
-    path = '/cluster/home/gdemos/work/ARMA/' # Path @ Brutus
-    #path = '/Users/demos/hierarchyfitting/'
+    #path = '/cluster/home/gdemos/work/ARMA/' # Path @ Brutus
+    path = '/Users/demos/Desktop/ARMASIMULATIONSRESULTS/'
 
     #try:
     #    ID = brutus_jobindex() - 1
     #    sampleSize = ID
     #except:
     #    print('Not @ Brutus env.')
-    sampleSize = 150
-    print(sampleSize)
+    #sampleSize = 150
+    #print(sampleSize)
 
     # True pars
-    truePars = [0.15, 0.45]
+    pars = [0.2, 0.5]
 
     # Run the Simulation
-    RES = MonteCarloBias(truePars, sampleSize, MC=2)
+    #RES = MonteCarloBias(truePars, sampleSize, MC=2)
+    #meanEstimation = pd.DataFrame(RES.mean(axis=1)); #meanEstimation.index=[sampleSize]
+    #stdEstimation = pd.DataFrame(RES.std(axis=1)); #stdEstimation.index=[sampleSize]
+    mVec, stdVec = MonteCarloBias_fullIteration(pars, MC=10)
 
-    fileName = 'MC30_SampleSize_'+str(sampleSize)+'.h5'
+    #fileName = 'MC30_SampleSize_'+str(sampleSize)+'.h5'
+    fileName = 'MC10_100_2_500_w20points.h5'
+
     # Save results
-    RES.to_hdf(path+fileName,'res')
+    mVec.to_hdf(path+'M0_allest_'+fileName,'res')
+    stdVec.to_hdf(path+'S0_allest_'+fileName,'res')
 
 
 if __name__ == "__main__":

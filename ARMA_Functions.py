@@ -14,6 +14,8 @@ from numpy import dot
 import warnings
 warnings.filterwarnings('ignore')
 import numdifftools as ndt
+import time
+from tqdm import *
 
 #########################################################
                                                         #
@@ -37,6 +39,7 @@ def generateMA(par, sz):
     return error, eps
 
 
+# ----------------------------------------
 def estimateMA(par, data):
     beta = par
     T = len(data)
@@ -67,6 +70,7 @@ def generateArma(pars, sz):
     return y, epsilon
 
 
+# ----------------------------------------
 def estimateARMA(pars, data):
     beta, theta = pars[0], pars[1]
     T = len(data)
@@ -82,6 +86,7 @@ def estimateARMA(pars, data):
     return llk
 
 
+# ----------------------------------------
 def estimatorARMA(data):
     # Estimate
     bounds = ((0.01, 0.99), (0.01, 0.99))
@@ -130,9 +135,9 @@ def profileARMA_theta(pars, data, thetaFix, simul=False):
         return error
 
 
-####################
-### MAIN FUNC I) ###
-####################
+# ----------------------------------------
+#            MAIN FUNC I)                #
+# ----------------------------------------
 
 def profileARMA_estimator(data, beta=True):
     """ if beta == True --> profile beta
@@ -166,7 +171,11 @@ def profileARMA_estimator(data, beta=True):
 
     # Optimal parameters
     optimalPars = parsH[parsH.index == llkOptimal]
-    optimalPars = np.array([optimalPars.index[0], optimalPars[0].values[0]])
+
+    if beta == True:
+        optimalPars = np.array([optimalPars.index[0], optimalPars[0].values[0]])
+    else:
+        optimalPars = np.array([optimalPars[0].values[0], optimalPars.index[0]])
 
     return llk, parsH, llkOptimal, optimalPars
 
@@ -189,19 +198,48 @@ def plotProfileLik(a, b, c, d):
     plt.tight_layout()
 
 
+# ----------------------------------------
 def plot_McResults(mVec, stdVec):
     f, ax = plt.subplots(1, 1, figsize=(6, 4))
 
-    c = ['k', 'r', 'b', 'y', 'g']
-    mrk = ['s', 'v', 'o', '^', 'D']
+    c = ['k', 'orange', 'c', 'b', 'g', 'r','m']
+    mrk = ['s', 'v', 'o', '*', 'D','^','.']
     for i in range(len(mVec.columns)):
-        mVec[mVec.columns[i]].plot(color=c[i], marker=mrk[i])
-        (mVec[mVec.columns[i]] - stdVec[stdVec.columns[i]]).plot(color=c[i], linestyle=':')
-        (mVec[mVec.columns[i]] + stdVec[stdVec.columns[i]]).plot(color=c[i], linestyle=':')
+        stdPm = mVec[mVec.columns[i]] + stdVec[stdVec.columns[i]]
+        m     = mVec[mVec.columns[i]].copy()
+
+        #ax.fill_between(mVec.index, stdPm, m, color=c[i], alpha=0.2)
+        m.plot(ax=ax, color=c[i], marker=mrk[i], linewidth=.5, markevery=1,alpha=0.7)
+        #stdPm.plot(ax=ax, color=c[i], linestyle='--', linewidth=1.5)
+
+    ax.legend([r'$e_1: Qml(\theta)$',
+                '$e_2: L_{p}(beta)$',
+                '$e_3:L_{p}(theta)$',
+                '$e_4: L_{mp}(beta)$',
+                '$e_5: L_{mp}(theta)$',
+                '$e_6: L_{mp}(all_pars)$'],
+               fontsize=15, fancybox=True, framealpha=0.5)
+
+    for i in range(len(mVec.columns)):
+        stdPm = mVec[mVec.columns[i]] + stdVec[stdVec.columns[i]]
+        m = mVec[mVec.columns[i]].copy()
+
+        ax.fill_between(mVec.index, stdPm, m, color=c[i], alpha=0.2)
+        #m.plot(ax=ax, color=c[i], marker=mrk[i], linewidth=.5, markevery=1, alpha=0.7)
+        stdPm.plot(ax=ax, color=c[i], linestyle='--', linewidth=.3)
+
     plt.ylabel(r'$\sqrt{\chi^2}$', fontsize=22)
     plt.xlabel(r'$Sample$ $size$', fontsize=22)
-    ax.legend(['Qml', 'LpBeta', 'LpTheta', 'MlpBeta', 'MlpTheta'], fontsize=12, loc='best',
-              fancybox=True, framealpha=0.5)
+
+    a = plt.axes([0.4, 0.6, .3, .3])
+    for i in range(len(mVec.columns)):
+        m = mVec[mVec.columns[i]].copy()
+        stdPm = mVec[mVec.columns[i]] + stdVec[stdVec.columns[i]]
+
+        a.fill_between(mVec.index[0:3], stdPm[0:3], m[0:3], color=c[i], alpha=0.3)
+        m[0:3].plot(ax=a, color=c[i], marker=mrk[i], linewidth=.5, markersize=4, markevery=1, alpha=0.5)
+        stdPm[0:3].plot(ax=a, color=c[i], linestyle='--', linewidth=.3)
+
     plt.tight_layout()
 
 
@@ -212,9 +250,9 @@ def estimator_estimateBias(data, truePars, allPars=True):
     """ Aggregated parameter estimation bias -> allPars == True """
 
     pHarQml = estimatorARMA(data)
-    _, _, _, pHatBeta = profileARMA_estimator(data, beta=True)
-    _, _, _, pHatTheta = profileARMA_estimator(data, beta=False)
-    _, _, _, pHatMlBeta = estimate_mpl_beta(data)
+    _, _, _, pHatBeta    = profileARMA_estimator(data, beta=True)
+    _, _, _, pHatTheta   = profileARMA_estimator(data, beta=False)
+    _, _, _, pHatMlBeta  = estimate_mpl_beta(data)
     _, _, _, pHatMlTheta = estimate_mpl_theta(data)
 
     if allPars == True:
@@ -230,11 +268,26 @@ def computeBias(pHatQml, pHatBeta, pHatTheta, truePars, mplbH, mpltH, allPars=Tr
     """ If allPars==True, then we compute the overall bias
         otherwise, we are interested on individual parameter bias (xi - xi^*)
     """
-    qmlB = np.abs(np.abs(pHatQml) - np.abs(truePars))/np.abs(np.abs(truePars))
-    lpBB = np.abs(np.abs(pHatBeta) - np.abs(truePars))/np.abs(np.abs(truePars))
-    lpTB = np.abs(np.abs(pHatTheta) - np.abs(truePars[::-1])) /np.abs(np.abs(truePars[::-1])) # USE [::-1] just like SOE!
-    mlBB = np.abs(np.abs(mplbH) - np.abs(truePars))/np.abs(np.abs(truePars))
-    mlTB = np.abs(np.abs(mpltH) - np.abs(truePars[::-1]))/np.abs(np.abs(truePars[::-1]))  # USE [::-1] just like SOE!
+    absLpBB = np.abs(pHatBeta)
+    absLpBT = np.abs(pHatTheta)
+
+    absLmBB = np.abs(mplbH)
+    absLmBT = np.abs(mpltH)
+
+    qmlB = np.abs(np.abs(pHatQml) - np.abs(truePars)) / np.abs(truePars)
+    lpBB = np.abs(np.abs(pHatBeta) - np.abs(truePars)) / np.abs(truePars)
+    lpTB = np.abs(np.abs(pHatTheta) - np.abs(truePars)) / np.abs(truePars)
+    mlBB = np.abs(np.abs(mplbH) - np.abs(truePars)) / np.abs(truePars)
+    mlTB = np.abs(np.abs(mpltH) - np.abs(truePars)) / np.abs(truePars)
+    # #
+    LpSup_part1 = np.abs(np.abs(absLpBB[0] - np.abs(truePars[0])) / np.abs(truePars[0]))
+    LpSup_part2 = np.abs(np.abs(absLpBT[-1] - np.abs(truePars[-1])) / np.abs(truePars[-1]))
+
+    LmSup_part1 = np.abs(np.abs(absLmBB[0] - np.abs(truePars[0])) / np.abs(truePars[0]))
+    LmSup_part2 = np.abs(np.abs(absLmBT[-1] - np.abs(truePars[-1])) / np.abs(truePars[-1]))
+
+    LpSup  = LpSup_part1 + LpSup_part2
+    LmSup  = LmSup_part1 + LmSup_part2
 
     if allPars == True:
         sum1 = np.sum(qmlB)
@@ -243,6 +296,8 @@ def computeBias(pHatQml, pHatBeta, pHatTheta, truePars, mplbH, mpltH, allPars=Tr
         DF['LpThetaBias'] = np.sum(lpTB)
         DF['LmBetaBias']  = np.sum(mlBB)
         DF['LmThetaBias'] = np.sum(mlTB)
+        DF['LpSup'] = LpSup
+        DF['LmSup'] = LmSup
 
         return DF
     else:
@@ -265,11 +320,12 @@ def MonteCarloBias(truePars, sz, MC=30):
     return RES
 
 
+# ----------------------------------------
 def MonteCarloBias_fullIteration(pars, MC=30):
     # For 100, 150, 200, 250 ... 1000, compute 30 Monte-Carlo simulations per sample
     MeanVec = pd.DataFrame();
     StdVec = MeanVec.copy()
-    sampleGrid = np.linspace(100, 1000, 10).astype(int)  # sample sizes to obtain estimates
+    sampleGrid = np.linspace(100, 300, 10).astype(int)  # sample sizes to obtain estimates
 
     for sz in sampleGrid:
         print(sz)
@@ -288,7 +344,6 @@ def MonteCarloBias_fullIteration(pars, MC=30):
 # Modified Profile Likelihood and Hessian estimation Functions
 # -------------------------------------------------------------
 
-# ----------------------------------------
 def calculate_hessianMatrix(pars, data, parFix, beta=True):
     """
     :param pars: pre-estimated parameters [1x2] (beta, theta)
@@ -400,6 +455,7 @@ def estimate_mpl_beta(data):
     return llk, parsH, llkOptimal, optimalPars
 
 
+# ----------------------------------------
 def estimate_mpl_theta(data):
     # first, Lp
     _, _, _, parsHatLp = profileARMA_estimator(data, beta=False)
@@ -430,7 +486,7 @@ def estimate_mpl_theta(data):
 
     # Optimal parameters
     optimalPars = parsH[parsH.index == llkOptimal]
-    optimalPars = np.array([optimalPars.index[0], optimalPars[0].values[0]])
+    optimalPars = np.array([optimalPars[0].values[0], optimalPars.index[0]])
 
     return llk, parsH, llkOptimal, optimalPars
 
@@ -457,7 +513,7 @@ def profileARMA_MPLbeta(pars, data, betaFix, X_hat, simul=False):
     detS = np.abs(np.dot(X_hat.T, X))
 
     ## The cost
-    llkm = (len(data)-1-2.)/2. * np.log(llk) + np.log(detI)/2. + np.log(detS)
+    llkm = (len(data)-1-2.)/2. * np.log(llk) - np.log(detI)/2. - np.log(detS)
 
     if simul == False:
         return llkm
@@ -465,6 +521,7 @@ def profileARMA_MPLbeta(pars, data, betaFix, X_hat, simul=False):
         return error
 
 
+# ----------------------------------------
 def profileARMA_MPLtheta(pars, data, thetaFix, X_hat, simul=False):
 
     beta, theta = pars[0], thetaFix
@@ -486,7 +543,7 @@ def profileARMA_MPLtheta(pars, data, thetaFix, X_hat, simul=False):
     detS = np.abs(np.dot(X_hat.T, X))
 
     ## The cost
-    llkm = (len(data) - 1 - 2.) / 2. * np.log(llk) + np.log(detI) / 2. + np.log(detS)
+    llkm = (len(data) - 1 - 2.) / 2. * np.log(llk) - np.log(detI) / 2. - np.log(detS)
 
     if simul == False:
         return llkm
@@ -495,5 +552,59 @@ def profileARMA_MPLtheta(pars, data, thetaFix, X_hat, simul=False):
 
 
 # ----------------------------------------
+# Functions V2.
+# ----------------------------------------
+
+def fitDataWith3simpleEstimators(data):
+    qml_hat = estimatorARMA(data)
+    _, _, _, lpBeta_hat = profileARMA_estimator(data, beta=True)
+    _, _, _, lpTheta_hat = profileARMA_estimator(data, beta=False)
+    return qml_hat, lpBeta_hat, lpTheta_hat
 
 
+def computeBias(data, pars):
+    # Estimated parameters for data data
+    e1, e2, e3 = fitDataWith3simpleEstimators(data)  # qml, lpBeta, lpTheta
+    _, _, _, e5 = estimate_mpl_beta(data)  # modified Profile Beta
+    _, _, _, e6 = estimate_mpl_theta(data)  # modified Profile Theta
+
+    # bias
+    E1 = np.sum((np.abs(np.abs(e1) - np.abs(pars)) / np.abs(pars)) ** 2.)
+    E2 = np.sum((np.abs(np.abs(e2) - np.abs(pars)) / np.abs(pars)) ** 2.)
+    E3 = np.sum((np.abs(np.abs(e3) - np.abs(pars)) / np.abs(pars)) ** 2.)
+    E4 = np.sum((np.abs(np.abs(e5) - np.abs(pars)) / np.abs(pars)) ** 2.)
+    E5 = np.sum((np.abs(np.abs(e6) - np.abs(pars)) / np.abs(pars)) ** 2.)
+
+    # agg LP
+    one = np.abs(np.abs(np.abs(e2[0]) - pars[0]) / pars[0]) ** 2.
+    two = np.abs(np.abs(np.abs(e3[-1]) - pars[1]) / pars[1]) ** 2.
+    E6 = np.abs(one + two)
+
+    # agg MLP
+    one1 = np.abs(np.abs(np.abs(e5[0]) - pars[0]) / pars[0]) ** 2.
+    two1 = np.abs(np.abs(np.abs(e6[-1]) - pars[1]) / pars[1]) ** 2.
+    E7 = np.abs(one1 + two1)
+
+    return pd.DataFrame([E1, E2, E3, E4, E5, E6, E7], index=['QML', 'LPb', 'LPt',
+                                                             'LMb', 'LMt',
+                                                             'LPagg', 'LMagg']).T
+
+
+def monteCarlo_newEstimators(pars=[0.2, 0.4], sz=100, mc=30, wantPars=False):
+    # If we want the parameter values on the simulation -> False
+    if wantPars is not False:
+        _est1, _est2, _est3 = [], [], []
+        for i in tqdm(range(mc)):
+            data, _ = generateArma(pars, sz)
+            est1, est2, est3 = fitDataWith3simpleEstimators(data)
+            _est1.append(est1);
+            _est2.append(est2);
+            _est3.append(est3)
+        return _est1, _est2, _est3  # RETURN PARAMETERS
+    else:
+        _est = pd.DataFrame()
+        for i in tqdm(range(mc)):
+            data, _ = generateArma(pars, sz)
+            biasDF = computeBias(data, pars)
+            _est = pd.concat([_est, biasDF], axis=0)
+        return _est  # RETURN BIAS
