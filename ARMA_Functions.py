@@ -507,13 +507,13 @@ def profileARMA_MPLbeta(pars, data, betaFix, X_hat, simul=False):
     llk = 0.5 * np.log(2. * np.pi) + 0.5 * log(sigma2) + sse
 
     ## MOD PROF
-    X, H = getHandScores(pars, data, betaFix, beta=True)
+    X, H  = getHandScores(pars, data, betaFix, beta=True)
     I_psi = X - H
-    detI = np.abs(I_psi)
-    detS = np.abs(np.dot(X_hat.T, X))
+    detI  = np.abs(I_psi)
+    detS  = np.abs(np.dot(X_hat.T, X))
 
     ## The cost
-    llkm = (len(data)-1-2.)/2. * np.log(llk) - np.log(detI)/2. - np.log(detS)
+    llkm = (len(data)-1-2.)/2. * np.log(llk) - np.log(detI)/2. - np.log(detS) # Best-one sofar
 
     if simul == False:
         return llkm
@@ -537,10 +537,10 @@ def profileARMA_MPLtheta(pars, data, thetaFix, X_hat, simul=False):
     llk = 0.5 * np.log(2. * np.pi) + 0.5 * log(sigma2) + sse
 
     ## MOD PROF
-    X, H = getHandScores(pars, data, thetaFix, beta=False)
+    X, H  = getHandScores(pars, data, thetaFix, beta=False)
     I_psi = X - H
-    detI = np.abs(I_psi)
-    detS = np.abs(np.dot(X_hat.T, X))
+    detI  = np.abs(I_psi)
+    detS  = np.abs(np.dot(X_hat.T, X))
 
     ## The cost
     llkm = (len(data) - 1 - 2.) / 2. * np.log(llk) - np.log(detI) / 2. - np.log(detS)
