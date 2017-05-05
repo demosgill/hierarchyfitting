@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 import itertools
 import numdifftools as ndt
+from numpy import *
 
 
 
@@ -377,7 +378,7 @@ def modProfLikelihoodA(data):
 
     ## MPL
     # Create grid and iterate
-    Agrid = np.linspace(5, 15, 10)
+    Agrid = np.linspace(5, 15, 9)
 
     objMPL = []
     for A in Agrid:
