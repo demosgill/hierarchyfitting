@@ -493,7 +493,7 @@ def estimate_profile_likelihood_step(data, get_profile_lik_vec=False, job_pool=N
 
     if omega == False:
         # run
-        gamma_range = np.linspace(0.01,0.15,20) ### MUDEI AQUI !!!
+        gamma_range = np.linspace(0.01, 0.15, 20) ### MUDEI AQUI !!!
 
         if RUN_PARALLEL:
             if job_pool is None:
