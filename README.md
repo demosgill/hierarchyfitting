@@ -40,4 +40,4 @@ res.head()
 
 # Conclusion:
 
-### - The MPL methodology yields an inferior bias relative to the other estimators.
+### - The application of the MPL methodology yields more accurate estimates of $y_t$ relative to other estimators. The effect is even more pronounced for small sample sizes.
